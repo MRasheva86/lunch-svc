@@ -17,6 +17,9 @@ public class LunchOrderRequest {
     private UUID parentId;
 
     @NonNull
+    private UUID walletId;
+
+    @NonNull
     private UUID childId;
 
     @NonNull

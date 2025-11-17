@@ -1,17 +1,15 @@
 package com.lunch.micro.service;
 
 import com.lunch.micro.exception.DomainException;
-import com.lunch.micro.model.OrderStatus;
 import com.lunch.micro.model.LunchOrder;
+import com.lunch.micro.model.OrderStatus;
 import com.lunch.micro.repository.LunchOrderRepository;
 import com.lunch.micro.web.dto.LunchOrderRequest;
-import com.lunch.micro.web.dto.LunchOrderResponse;
 import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.DayOfWeek;
-
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
@@ -31,15 +29,15 @@ public class LunchOrderService {
     }
 
     @Transactional
-    public LunchOrderResponse createAndPayOrder(LunchOrderRequest lunchOrderRequest) {
+    public LunchOrder createAndPayOrder(LunchOrderRequest lunchOrderRequest) {
 
         validateRequest(lunchOrderRequest);
 
         BigDecimal totalAmount = PRICE.multiply(new BigDecimal(lunchOrderRequest.getQuantity()));
 
-
         LunchOrder order = LunchOrder.builder()
                 .parentId(lunchOrderRequest.getParentId())
+                .walletId(lunchOrderRequest.getWalletId())
                 .childId(lunchOrderRequest.getChildId())
                 .meal(lunchOrderRequest.getMeal())
                 .quantity(lunchOrderRequest.getQuantity())
@@ -49,25 +47,32 @@ public class LunchOrderService {
                 .status(OrderStatus.PAID)
                 .build();
 
-        LunchOrder savedOrder = repository.save(order);
-
-
-        return null;
+        return repository.save(order);
     }
 
     private void validateRequest(LunchOrderRequest lunchOrderRequest) {
+        if (lunchOrderRequest.getParentId() == null) {
+            throw new DomainException("Parent ID is required");
+        }
+        if (lunchOrderRequest.getWalletId() == null) {
+            throw new DomainException("Wallet ID is required");
+        }
+        if (lunchOrderRequest.getChildId() == null) {
+            throw new DomainException("Child ID is required");
+        }
         if (lunchOrderRequest.getQuantity() <= 0) {
             throw new DomainException("Quantity must be greater than zero");
         }
 
         DayOfWeek requestedDay = lunchOrderRequest.getDayOfWeek();
-        if (!ALLOWED_DAYS.contains(requestedDay)) {
+        if (requestedDay == null || !ALLOWED_DAYS.contains(requestedDay)) {
             throw new DomainException("Lunches can only be ordered for Monday through Friday");
         }
 
-        boolean alreadyOrderedForDay = repository.existsByChildIdAndDayOfWeek(
+        boolean alreadyOrderedForDay = repository.existsByChildIdAndDayOfWeekAndStatusNot(
                 lunchOrderRequest.getChildId(),
-                requestedDay.name()
+                requestedDay.name(),
+                OrderStatus.CANCELLED
         );
 
         if (alreadyOrderedForDay) {
@@ -83,7 +88,6 @@ public class LunchOrderService {
         if (order.getStatus() != OrderStatus.PAID) {
             throw new DomainException("Only paid orders can be cancelled");
         }
-
 
         order.setStatus(OrderStatus.CANCELLED);
 

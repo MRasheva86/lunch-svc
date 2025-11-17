@@ -20,10 +20,13 @@ public class LunchOrder {
    @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(nullable = false)
+    @Column(name = "parent_id", nullable = false)
     private UUID parentId;
 
-    @Column(nullable = false)
+    @Column(name = "wallet_id", nullable = false)
+    private UUID walletId;
+
+    @Column(name = "child_id", nullable = false)
     private UUID childId;
 
     @Enumerated(EnumType.STRING)

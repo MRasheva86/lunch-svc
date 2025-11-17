@@ -14,4 +14,5 @@ public interface LunchOrderRepository extends JpaRepository<LunchOrder, UUID> {
     List<LunchOrder> findAllByParentIdAndStatus(UUID parentId, OrderStatus status);
     List<LunchOrder> findAllByChildId(UUID childId);
     boolean existsByChildIdAndDayOfWeek(UUID childId, String dayOfWeek);
+    boolean existsByChildIdAndDayOfWeekAndStatusNot(UUID childId, String dayOfWeek, OrderStatus status);
 }
