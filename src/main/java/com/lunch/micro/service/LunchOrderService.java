@@ -10,6 +10,8 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.DayOfWeek;
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
@@ -69,6 +71,19 @@ public class LunchOrderService {
             throw new DomainException("Lunches can only be ordered for Monday through Friday");
         }
 
+        // Validate that the requested day is within the next 5 working days
+        LocalDate today = LocalDate.now();
+        LocalTime currentTime = LocalTime.now();
+        LocalTime orderCutoffTime = LocalTime.of(9, 0);
+        
+        // Get the next 5 working days
+        Set<DayOfWeek> availableDays = getNext5WorkingDays(today, currentTime, orderCutoffTime);
+        
+        if (!availableDays.contains(requestedDay)) {
+            throw new DomainException("Lunch can only be ordered for the next 5 working days. " +
+                    "If ordering for today, it must be before 9:00 AM.");
+        }
+
         boolean alreadyOrderedForDay = repository.existsByChildIdAndDayOfWeekAndStatusNot(
                 lunchOrderRequest.getChildId(),
                 requestedDay.name(),
@@ -80,6 +95,31 @@ public class LunchOrderService {
         }
     }
 
+    private Set<DayOfWeek> getNext5WorkingDays(LocalDate today, LocalTime currentTime, LocalTime cutoffTime) {
+        Set<DayOfWeek> availableDays = EnumSet.noneOf(DayOfWeek.class);
+        LocalDate currentDate = today;
+        int workingDaysAdded = 0;
+        
+        // Check if we can order for today (must be before 9:00 AM)
+        if (currentTime.isBefore(cutoffTime) && ALLOWED_DAYS.contains(currentDate.getDayOfWeek())) {
+            availableDays.add(currentDate.getDayOfWeek());
+            workingDaysAdded++;
+        }
+        
+        // Add the next working days until we have 5 total
+        while (workingDaysAdded < 5) {
+            currentDate = currentDate.plusDays(1);
+            DayOfWeek dayOfWeek = currentDate.getDayOfWeek();
+            
+            if (ALLOWED_DAYS.contains(dayOfWeek)) {
+                availableDays.add(dayOfWeek);
+                workingDaysAdded++;
+            }
+        }
+        
+        return availableDays;
+    }
+
     @Transactional
     public void cancelOrder(UUID orderId) {
         LunchOrder order = repository.findById(orderId)
@@ -87,6 +127,16 @@ public class LunchOrderService {
 
         if (order.getStatus() != OrderStatus.PAID) {
             throw new DomainException("Only paid orders can be cancelled");
+        }
+
+        // Check if order is for today and time is at or after 10:00 AM
+        DayOfWeek orderDay = DayOfWeek.valueOf(order.getDayOfWeek());
+        DayOfWeek currentDay = java.time.LocalDate.now().getDayOfWeek();
+        LocalTime currentTime = LocalTime.now();
+        LocalTime cutoffTime = LocalTime.of(10, 0);
+
+        if (orderDay == currentDay && !currentTime.isBefore(cutoffTime)) {
+            throw new DomainException("Your lunch is almost cocked, I am afraid it is too late to cancel this order.");
         }
 
         order.setStatus(OrderStatus.CANCELLED);
