@@ -121,6 +121,44 @@ public class LunchOrderService {
     }
 
     @Transactional
+    public void cancelOrder(UUID orderId, UUID childId) {
+        LunchOrder order = repository.findById(orderId)
+                .orElseThrow(() -> new DomainException("Order not found"));
+
+        if (order.getChildId() == null || !order.getChildId().equals(childId)) {
+            throw new DomainException("Order does not belong to the specified child");
+        }
+
+        if (order.getStatus() == null || order.getStatus() != OrderStatus.PAID) {
+            throw new DomainException("Only paid orders can be cancelled");
+        }
+
+        // Paid lunches can be cancelled UNLESS it's the order day and it's 10:00 AM or later
+        // Allow cancellation for: future days (any time) OR today before 10:00 AM
+        try {
+            DayOfWeek orderDay = DayOfWeek.valueOf(order.getDayOfWeek());
+            DayOfWeek currentDay = java.time.LocalDate.now().getDayOfWeek();
+            LocalTime currentTime = LocalTime.now();
+            LocalTime cutoffTime = LocalTime.of(10, 0);
+
+            // Block cancellation only if: same day AND time >= 10:00 AM
+            boolean isOrderDay = orderDay == currentDay;
+            boolean isAtOrAfterCutoff = currentTime.isAfter(cutoffTime) || currentTime.equals(cutoffTime);
+            
+            if (isOrderDay && isAtOrAfterCutoff) {
+                throw new DomainException("Your lunch is almost cocked, we are afraid it is too late to cancel this order.");
+            }
+        } catch (IllegalArgumentException e) {
+            throw new DomainException("Invalid day of week in order: " + order.getDayOfWeek());
+        }
+
+        // Allow cancellation - update status
+        order.setStatus(OrderStatus.CANCELLED);
+
+        repository.save(order);
+    }
+
+    @Transactional
     public void cancelOrder(UUID orderId) {
         LunchOrder order = repository.findById(orderId)
                 .orElseThrow(() -> new DomainException("Order not found"));
@@ -129,16 +167,26 @@ public class LunchOrderService {
             throw new DomainException("Only paid orders can be cancelled");
         }
 
-        // Check if order is for today and time is at or after 10:00 AM
-        DayOfWeek orderDay = DayOfWeek.valueOf(order.getDayOfWeek());
-        DayOfWeek currentDay = java.time.LocalDate.now().getDayOfWeek();
-        LocalTime currentTime = LocalTime.now();
-        LocalTime cutoffTime = LocalTime.of(10, 0);
+        // Paid lunches can be cancelled UNLESS it's the order day and it's 10:00 AM or later
+        // Allow cancellation for: future days (any time) OR today before 10:00 AM
+        try {
+            DayOfWeek orderDay = DayOfWeek.valueOf(order.getDayOfWeek());
+            DayOfWeek currentDay = java.time.LocalDate.now().getDayOfWeek();
+            LocalTime currentTime = LocalTime.now();
+            LocalTime cutoffTime = LocalTime.of(10, 0);
 
-        if (orderDay == currentDay && !currentTime.isBefore(cutoffTime)) {
-            throw new DomainException("Your lunch is almost cocked, I am afraid it is too late to cancel this order.");
+            // Block cancellation only if: same day AND time >= 10:00 AM
+            boolean isOrderDay = orderDay == currentDay;
+            boolean isAtOrAfterCutoff = currentTime.isAfter(cutoffTime) || currentTime.equals(cutoffTime);
+            
+            if (isOrderDay && isAtOrAfterCutoff) {
+                throw new DomainException("Your lunch is almost cocked, we are afraid it is too late to cancel this order.");
+            }
+        } catch (IllegalArgumentException e) {
+            throw new DomainException("Invalid day of week in order: " + order.getDayOfWeek());
         }
 
+        // Allow cancellation - update status
         order.setStatus(OrderStatus.CANCELLED);
 
         repository.save(order);

@@ -5,7 +5,8 @@ import lombok.Getter;
 @Getter
 public enum OrderStatus {
     PAID ("Paid"),
-    CANCELLED ("Cancelled");
+    CANCELLED ("Cancelled"),
+    COMPLETED ("Completed");
 
     private String displayName;
 

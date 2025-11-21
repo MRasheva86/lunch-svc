@@ -35,10 +35,10 @@ public class LunchController {
         List<LunchOrder> lunches = lunchOrderService.getByChild(childId);
         return ResponseEntity.ok(lunches);
     }
-    @DeleteMapping("/{childId}/lunches/{orderId}")
+    @DeleteMapping("/{childId}/lunches/{lunchId}")
     public ResponseEntity<Void> cancelLunch(@PathVariable UUID childId,
-                                            @PathVariable UUID orderId) {
-        lunchOrderService.cancelOrder(orderId);
+                                            @PathVariable UUID lunchId) {
+        lunchOrderService.cancelOrder(lunchId, childId);
         return ResponseEntity.noContent().build();
     }
 }
