@@ -138,6 +138,12 @@ public class LunchOrderService {
             throw new DomainException("Order does not belong to the specified child");
         }
 
+        validateCancellation(order);
+        order.setStatus(OrderStatus.CANCELLED);
+        repository.save(order);
+    }
+
+    private void validateCancellation(LunchOrder order) {
         // Cannot delete completed orders
         if (order.getStatus() == OrderStatus.COMPLETED) {
             throw new DomainException("Cannot cancel a completed order");
@@ -152,7 +158,7 @@ public class LunchOrderService {
         // After 12:00 PM (noon), the order becomes COMPLETED (handled by scheduled task), so it cannot be deleted
         try {
             DayOfWeek orderDay = DayOfWeek.valueOf(order.getDayOfWeek());
-            DayOfWeek currentDay = java.time.LocalDate.now().getDayOfWeek();
+            DayOfWeek currentDay = LocalDate.now().getDayOfWeek();
             LocalTime currentTime = LocalTime.now();
             LocalTime startCutoff = LocalTime.of(10, 0); // 10:00 AM
             LocalTime noon = LocalTime.of(12, 0); // 12:00 PM (noon)
@@ -160,7 +166,7 @@ public class LunchOrderService {
             boolean isOrderDay = orderDay == currentDay;
             boolean isAtOrAfter10AM = currentTime.isAfter(startCutoff) || currentTime.equals(startCutoff);
             boolean isBeforeNoon = currentTime.isBefore(noon);
-            
+
             // Show "almost cocked" message only between 10:00 AM and 12:00 PM (noon) on the order day
             // After 12:00 PM (noon), order becomes COMPLETED and cannot be deleted (checked above)
             if (isOrderDay && isAtOrAfter10AM && isBeforeNoon) {
@@ -169,55 +175,8 @@ public class LunchOrderService {
         } catch (IllegalArgumentException e) {
             throw new DomainException("Invalid day of week in order: " + order.getDayOfWeek());
         }
-
-        // Allow cancellation - update status
-        order.setStatus(OrderStatus.CANCELLED);
-
-        repository.save(order);
     }
 
-    @Transactional
-    public void cancelOrder(UUID orderId) {
-        LunchOrder order = repository.findById(orderId)
-                .orElseThrow(() -> new DomainException("Order not found"));
-
-        // Cannot delete completed orders
-        if (order.getStatus() == OrderStatus.COMPLETED) {
-            throw new DomainException("Cannot cancel a completed order");
-        }
-
-        // Only paid orders can be cancelled
-        if (order.getStatus() == null || order.getStatus() != OrderStatus.PAID) {
-            throw new DomainException("Only paid orders can be cancelled");
-        }
-
-        // Check if it's the order day and time is between 10:00 AM and 12:00 PM (noon)
-        // After 12:00 PM (noon), the order becomes COMPLETED (handled by scheduled task), so it cannot be deleted
-        try {
-            DayOfWeek orderDay = DayOfWeek.valueOf(order.getDayOfWeek());
-            DayOfWeek currentDay = java.time.LocalDate.now().getDayOfWeek();
-            LocalTime currentTime = LocalTime.now();
-            LocalTime startCutoff = LocalTime.of(10, 0); // 10:00 AM
-            LocalTime noon = LocalTime.of(12, 0); // 12:00 PM (noon)
-
-            boolean isOrderDay = orderDay == currentDay;
-            boolean isAtOrAfter10AM = currentTime.isAfter(startCutoff) || currentTime.equals(startCutoff);
-            boolean isBeforeNoon = currentTime.isBefore(noon);
-            
-            // Show "almost cocked" message only between 10:00 AM and 12:00 PM (noon) on the order day
-            // After 12:00 PM (noon), order becomes COMPLETED and cannot be deleted (checked above)
-            if (isOrderDay && isAtOrAfter10AM && isBeforeNoon) {
-                throw new DomainException("Your lunch is almost cocked, we are afraid it is too late to cancel this order.");
-            }
-        } catch (IllegalArgumentException e) {
-            throw new DomainException("Invalid day of week in order: " + order.getDayOfWeek());
-        }
-
-        // Allow cancellation - update status
-        order.setStatus(OrderStatus.CANCELLED);
-
-        repository.save(order);
-    }
 
     public List<LunchOrder> getByParent(UUID parentId) {
         // Exclude completed orders older than 7 hours
@@ -240,8 +199,4 @@ public class LunchOrderService {
         return repository.findAllByChildIdExcludingOldCompleted(
                 childId, OrderStatus.COMPLETED, sevenHoursAgo);
     }
-
-
-
-
 }

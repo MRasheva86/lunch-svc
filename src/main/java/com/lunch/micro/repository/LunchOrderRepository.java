@@ -13,10 +13,7 @@ import java.util.UUID;
 
 @Repository
 public interface LunchOrderRepository extends JpaRepository<LunchOrder, UUID> {
-    List<LunchOrder> findAllByParentId(UUID parentId);
     List<LunchOrder> findAllByParentIdAndStatus(UUID parentId, OrderStatus status);
-    List<LunchOrder> findAllByChildId(UUID childId);
-    boolean existsByChildIdAndDayOfWeek(UUID childId, String dayOfWeek);
     boolean existsByChildIdAndDayOfWeekAndStatusNot(UUID childId, String dayOfWeek, OrderStatus status);
     
     /**
