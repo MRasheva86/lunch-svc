@@ -56,9 +56,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HttpClientErrorException.class)
     public ResponseEntity<Map<String, String>> handleHttpClientErrorException(HttpClientErrorException e) {
         String errorMessage = e.getMessage();
-        if (e.getResponseBodyAsString() != null && !e.getResponseBodyAsString().isEmpty()) {
-            errorMessage = e.getResponseBodyAsString();
-        }
+
         return ResponseEntity.status(e.getStatusCode())
                 .body(createErrorResponse(errorMessage, HttpStatus.BAD_REQUEST));
     }
@@ -66,9 +64,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HttpServerErrorException.class)
     public ResponseEntity<Map<String, String>> handleHttpServerErrorException(HttpServerErrorException e) {
         String errorMessage = e.getMessage();
-        if (e.getResponseBodyAsString() != null && !e.getResponseBodyAsString().isEmpty()) {
-            errorMessage = e.getResponseBodyAsString();
-        }
+
         return ResponseEntity.status(e.getStatusCode())
                 .body(createErrorResponse(errorMessage, HttpStatus.INTERNAL_SERVER_ERROR));
     }
