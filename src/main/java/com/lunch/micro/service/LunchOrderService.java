@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.DayOfWeek;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.EnumSet;
@@ -74,14 +75,22 @@ public class LunchOrderService {
         // Validate that the requested day is within the next 5 working days
         LocalDate today = LocalDate.now();
         LocalTime currentTime = LocalTime.now();
-        LocalTime orderCutoffTime = LocalTime.of(9, 0);
+        DayOfWeek currentDay = today.getDayOfWeek();
+        LocalTime orderCutoffTime = LocalTime.of(10, 0);
+        
+        // If ordering for today, it must be before 10:00 AM
+        if (requestedDay == currentDay) {
+            if (currentTime.isAfter(orderCutoffTime) || currentTime.equals(orderCutoffTime)) {
+                throw new DomainException("Orders for today must be placed before 10:00 AM. It is too late to order lunch for today.");
+            }
+        }
         
         // Get the next 5 working days
         Set<DayOfWeek> availableDays = getNext5WorkingDays(today, currentTime, orderCutoffTime);
         
         if (!availableDays.contains(requestedDay)) {
             throw new DomainException("Lunch can only be ordered for the next 5 working days. " +
-                    "If ordering for today, it must be before 9:00 AM.");
+                    "If ordering for today, it must be before 10:00 AM.");
         }
 
         boolean alreadyOrderedForDay = repository.existsByChildIdAndDayOfWeekAndStatusNot(
@@ -100,7 +109,7 @@ public class LunchOrderService {
         LocalDate currentDate = today;
         int workingDaysAdded = 0;
         
-        // Check if we can order for today (must be before 9:00 AM)
+        // Check if we can order for today (must be before 10:00 AM)
         if (currentTime.isBefore(cutoffTime) && ALLOWED_DAYS.contains(currentDate.getDayOfWeek())) {
             availableDays.add(currentDate.getDayOfWeek());
             workingDaysAdded++;
@@ -129,23 +138,32 @@ public class LunchOrderService {
             throw new DomainException("Order does not belong to the specified child");
         }
 
+        // Cannot delete completed orders
+        if (order.getStatus() == OrderStatus.COMPLETED) {
+            throw new DomainException("Cannot cancel a completed order");
+        }
+
+        // Only paid orders can be cancelled
         if (order.getStatus() == null || order.getStatus() != OrderStatus.PAID) {
             throw new DomainException("Only paid orders can be cancelled");
         }
 
-        // Paid lunches can be cancelled UNLESS it's the order day and it's 10:00 AM or later
-        // Allow cancellation for: future days (any time) OR today before 10:00 AM
+        // Check if it's the order day and time is between 10:00 AM and 12:00 PM (noon)
+        // After 12:00 PM (noon), the order becomes COMPLETED (handled by scheduled task), so it cannot be deleted
         try {
             DayOfWeek orderDay = DayOfWeek.valueOf(order.getDayOfWeek());
             DayOfWeek currentDay = java.time.LocalDate.now().getDayOfWeek();
             LocalTime currentTime = LocalTime.now();
-            LocalTime cutoffTime = LocalTime.of(10, 0);
+            LocalTime startCutoff = LocalTime.of(10, 0); // 10:00 AM
+            LocalTime noon = LocalTime.of(12, 0); // 12:00 PM (noon)
 
-            // Block cancellation only if: same day AND time >= 10:00 AM
             boolean isOrderDay = orderDay == currentDay;
-            boolean isAtOrAfterCutoff = currentTime.isAfter(cutoffTime) || currentTime.equals(cutoffTime);
+            boolean isAtOrAfter10AM = currentTime.isAfter(startCutoff) || currentTime.equals(startCutoff);
+            boolean isBeforeNoon = currentTime.isBefore(noon);
             
-            if (isOrderDay && isAtOrAfterCutoff) {
+            // Show "almost cocked" message only between 10:00 AM and 12:00 PM (noon) on the order day
+            // After 12:00 PM (noon), order becomes COMPLETED and cannot be deleted (checked above)
+            if (isOrderDay && isAtOrAfter10AM && isBeforeNoon) {
                 throw new DomainException("Your lunch is almost cocked, we are afraid it is too late to cancel this order.");
             }
         } catch (IllegalArgumentException e) {
@@ -163,23 +181,32 @@ public class LunchOrderService {
         LunchOrder order = repository.findById(orderId)
                 .orElseThrow(() -> new DomainException("Order not found"));
 
-        if (order.getStatus() != OrderStatus.PAID) {
+        // Cannot delete completed orders
+        if (order.getStatus() == OrderStatus.COMPLETED) {
+            throw new DomainException("Cannot cancel a completed order");
+        }
+
+        // Only paid orders can be cancelled
+        if (order.getStatus() == null || order.getStatus() != OrderStatus.PAID) {
             throw new DomainException("Only paid orders can be cancelled");
         }
 
-        // Paid lunches can be cancelled UNLESS it's the order day and it's 10:00 AM or later
-        // Allow cancellation for: future days (any time) OR today before 10:00 AM
+        // Check if it's the order day and time is between 10:00 AM and 12:00 PM (noon)
+        // After 12:00 PM (noon), the order becomes COMPLETED (handled by scheduled task), so it cannot be deleted
         try {
             DayOfWeek orderDay = DayOfWeek.valueOf(order.getDayOfWeek());
             DayOfWeek currentDay = java.time.LocalDate.now().getDayOfWeek();
             LocalTime currentTime = LocalTime.now();
-            LocalTime cutoffTime = LocalTime.of(10, 0);
+            LocalTime startCutoff = LocalTime.of(10, 0); // 10:00 AM
+            LocalTime noon = LocalTime.of(12, 0); // 12:00 PM (noon)
 
-            // Block cancellation only if: same day AND time >= 10:00 AM
             boolean isOrderDay = orderDay == currentDay;
-            boolean isAtOrAfterCutoff = currentTime.isAfter(cutoffTime) || currentTime.equals(cutoffTime);
+            boolean isAtOrAfter10AM = currentTime.isAfter(startCutoff) || currentTime.equals(startCutoff);
+            boolean isBeforeNoon = currentTime.isBefore(noon);
             
-            if (isOrderDay && isAtOrAfterCutoff) {
+            // Show "almost cocked" message only between 10:00 AM and 12:00 PM (noon) on the order day
+            // After 12:00 PM (noon), order becomes COMPLETED and cannot be deleted (checked above)
+            if (isOrderDay && isAtOrAfter10AM && isBeforeNoon) {
                 throw new DomainException("Your lunch is almost cocked, we are afraid it is too late to cancel this order.");
             }
         } catch (IllegalArgumentException e) {
@@ -193,7 +220,10 @@ public class LunchOrderService {
     }
 
     public List<LunchOrder> getByParent(UUID parentId) {
-        return repository.findAllByParentId(parentId);
+        // Exclude completed orders older than 7 hours
+        Instant sevenHoursAgo = Instant.now().minusSeconds(7 * 60 * 60);
+        return repository.findAllByParentIdExcludingOldCompleted(
+                parentId, OrderStatus.COMPLETED, sevenHoursAgo);
     }
 
     public List<LunchOrder> getPaidByParent(UUID parentId) {
@@ -205,7 +235,10 @@ public class LunchOrderService {
     }
 
     public List<LunchOrder> getByChild(UUID childId) {
-        return repository.findAllByChildId(childId);
+        // Exclude completed orders older than 7 hours
+        Instant sevenHoursAgo = Instant.now().minusSeconds(7 * 60 * 60);
+        return repository.findAllByChildIdExcludingOldCompleted(
+                childId, OrderStatus.COMPLETED, sevenHoursAgo);
     }
 
 

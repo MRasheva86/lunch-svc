@@ -50,6 +50,7 @@ public class LunchOrder {
 
     private Instant createdOn;
     private Instant updatedOn;
+    private Instant completedOn;
 
     @PrePersist
     public void onCreate() {
