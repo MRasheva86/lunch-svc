@@ -1,5 +1,6 @@
 package com.lunch.micro.model;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -46,6 +47,7 @@ public class LunchOrder {
     private BigDecimal total;
 
     @Enumerated(EnumType.STRING)
+    @JsonProperty("status")
     private OrderStatus status;
 
     private Instant createdOn;

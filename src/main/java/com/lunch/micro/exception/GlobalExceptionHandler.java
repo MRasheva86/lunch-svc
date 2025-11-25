@@ -46,9 +46,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, String>> handleTypeMismatchException(MethodArgumentTypeMismatchException e) {
         String message = "Invalid parameter format: " + e.getName() + ". Expected format: " +
                         (e.getRequiredType() != null ? e.getRequiredType().getSimpleName() : "unknown");
-        if (e.getMessage() != null && e.getMessage().contains("UUID")) {
-            message = "Invalid UUID format for parameter: " + e.getName();
-        }
+
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(createErrorResponse(message, HttpStatus.BAD_REQUEST));
     }
