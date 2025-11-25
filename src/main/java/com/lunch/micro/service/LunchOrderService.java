@@ -5,10 +5,14 @@ import com.lunch.micro.model.LunchOrder;
 import com.lunch.micro.model.OrderStatus;
 import com.lunch.micro.repository.LunchOrderRepository;
 import com.lunch.micro.web.dto.LunchOrderRequest;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.DayOfWeek;
@@ -28,7 +32,9 @@ public class LunchOrderService {
     private static final Set<DayOfWeek> ALLOWED_DAYS = EnumSet.range(DayOfWeek.MONDAY, DayOfWeek.FRIDAY);
 
     private final LunchOrderRepository repository;
-
+    
+    @PersistenceContext
+    private EntityManager entityManager;
 
     public LunchOrderService(LunchOrderRepository repository) {
         this.repository = repository;
@@ -128,26 +134,51 @@ public class LunchOrderService {
     @Transactional
     public void cancelOrder(UUID orderId, UUID childId) {
         logger.info("Processing cancellation request for orderId: {}, childId: {}", orderId, childId);
+        
+        // Reload order from database to get latest status (in case scheduled task updated it)
         LunchOrder order = repository.findById(orderId)
                 .orElseThrow(() -> {
                     logger.warn("Order not found for orderId: {}", orderId);
                     return new DomainException("Order not found");
                 });
 
+        // Refresh from database to ensure we have the latest status
+        entityManager.refresh(order);
+        logger.debug("Order {} refreshed from database, current status: {}", orderId, order.getStatus());
+
         if (order.getChildId() == null || !order.getChildId().equals(childId)) {
             logger.warn("Order {} does not belong to child {}", orderId, childId);
             throw new DomainException("Order does not belong to the specified child");
         }
 
+        // Validate cancellation - this checks status and time restrictions
         validateCancellation(order);
+        
+        // If validation passes, proceed with cancellation
         order.setStatus(OrderStatus.CANCELLED);
         repository.save(order);
         logger.info("Order cancelled successfully. orderId: {}, previousStatus: {}, newStatus: {}", 
-                orderId, OrderStatus.PAID, OrderStatus.CANCELLED);
+                orderId, order.getStatus(), OrderStatus.CANCELLED);
     }
 
     private void validateCancellation(LunchOrder order) {
-        // Check if it's the order day and validate time restrictions first
+        logger.debug("Validating cancellation for order: {}, current status: {}", order.getId(), order.getStatus());
+        
+        // Cannot delete completed orders - check first
+        if (order.getStatus() == OrderStatus.COMPLETED) {
+            logger.warn("Attempt to cancel already completed order: {}", order.getId());
+            DomainException exception = new DomainException("Cannot cancel a completed order");
+            logger.warn("Throwing DomainException: {}", exception.getMessage());
+            throw exception;
+        }
+
+        // Only paid orders can be cancelled
+        if (order.getStatus() == null || order.getStatus() != OrderStatus.PAID) {
+            logger.warn("Attempt to cancel order with invalid status: {} - Status: {}", order.getId(), order.getStatus());
+            throw new DomainException("Only paid orders can be cancelled");
+        }
+
+        // Check if it's the order day and validate time restrictions
         try {
             DayOfWeek orderDay = DayOfWeek.valueOf(order.getDayOfWeek());
             DayOfWeek currentDay = LocalDate.now().getDayOfWeek();
@@ -165,29 +196,45 @@ public class LunchOrderService {
                     boolean isAtOrAfterNoon = currentTime.isAfter(noon) || currentTime.equals(noon);
                     if (isAtOrAfterNoon) {
                         // Update status to COMPLETED if not already updated by scheduled task
-                        if (order.getStatus() == OrderStatus.PAID) {
-                            order.setStatus(OrderStatus.COMPLETED);
-                            order.setCompletedOn(Instant.now());
-                            repository.save(order);
+                        logger.info("Order {} is for today after 12:00 PM, updating to COMPLETED status", order.getId());
+                        try {
+                            updateOrderToCompleted(order.getId()); // Update in separate transaction
+                            logger.info("Successfully updated order {} to COMPLETED status", order.getId());
+                        } catch (Exception e) {
+                            logger.error("Failed to update order {} to COMPLETED status, but still blocking cancellation: {}", order.getId(), e.getMessage());
                         }
-                        throw new DomainException("Cannot cancel a completed order");
+                        logger.warn("Cannot cancel order {} - it should be COMPLETED (after 12:00 PM on order day)", order.getId());
+                        DomainException exception = new DomainException("Cannot cancel a completed order");
+                        logger.warn("Throwing DomainException: {}", exception.getMessage());
+                        throw exception;
                     }
                     // Between 10:00 AM and 12:00 PM (noon), deletion is forbidden
+                    logger.warn("Cannot cancel order {} - it is after 10:00 AM on order day", order.getId());
                     throw new DomainException("Your lunch is almost completed, we are afraid it is too late to cancel this order.");
                 }
             }
         } catch (IllegalArgumentException e) {
+            logger.error("Invalid day of week in order {}: {}", order.getId(), order.getDayOfWeek());
             throw new DomainException("Invalid day of week in order: " + order.getDayOfWeek());
         }
+    }
 
-        // Cannot delete completed orders (check after time validation)
-        if (order.getStatus() == OrderStatus.COMPLETED) {
-            throw new DomainException("Cannot cancel a completed order");
-        }
-
-        // Only paid orders can be cancelled
-        if (order.getStatus() == null || order.getStatus() != OrderStatus.PAID) {
-            throw new DomainException("Only paid orders can be cancelled");
+    /**
+     * Update order to COMPLETED status in a separate transaction
+     * This ensures the status update persists even if the calling transaction rolls back
+     */
+    @org.springframework.transaction.annotation.Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void updateOrderToCompleted(UUID orderId) {
+        try {
+            LunchOrder order = repository.findById(orderId)
+                    .orElseThrow(() -> new RuntimeException("Order not found for status update"));
+            order.setStatus(OrderStatus.COMPLETED);
+            order.setCompletedOn(Instant.now());
+            repository.save(order);
+            logger.info("Order {} updated to COMPLETED status in separate transaction", orderId);
+        } catch (Exception e) {
+            logger.error("Failed to update order {} to COMPLETED status: {}", orderId, e.getMessage());
+            // Don't throw exception here - the main validation will handle it
         }
     }
 
