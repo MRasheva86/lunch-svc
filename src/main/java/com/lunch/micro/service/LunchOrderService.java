@@ -6,6 +6,8 @@ import com.lunch.micro.model.OrderStatus;
 import com.lunch.micro.repository.LunchOrderRepository;
 import com.lunch.micro.web.dto.LunchOrderRequest;
 import jakarta.transaction.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -21,6 +23,7 @@ import java.util.UUID;
 @Service
 public class LunchOrderService {
 
+    private static final Logger logger = LoggerFactory.getLogger(LunchOrderService.class);
     private static final BigDecimal PRICE = new BigDecimal("2.50");
     private static final Set<DayOfWeek> ALLOWED_DAYS = EnumSet.range(DayOfWeek.MONDAY, DayOfWeek.FRIDAY);
 
@@ -33,7 +36,8 @@ public class LunchOrderService {
 
     @Transactional
     public LunchOrder createAndPayOrder(LunchOrderRequest lunchOrderRequest) {
-
+        logger.info("Creating and paying order for childId: {}, dayOfWeek: {}, quantity: {}", 
+                lunchOrderRequest.getChildId(), lunchOrderRequest.getDayOfWeek(), lunchOrderRequest.getQuantity());
         validateRequest(lunchOrderRequest);
 
         BigDecimal totalAmount = PRICE.multiply(new BigDecimal(lunchOrderRequest.getQuantity()));
@@ -50,7 +54,10 @@ public class LunchOrderService {
                 .status(OrderStatus.PAID)
                 .build();
 
-        return repository.save(order);
+        LunchOrder savedOrder = repository.save(order);
+        logger.info("Order created and paid successfully. orderId: {}, total: {}, status: {}", 
+                savedOrder.getId(), savedOrder.getTotal(), savedOrder.getStatus());
+        return savedOrder;
     }
 
     private void validateRequest(LunchOrderRequest lunchOrderRequest) {
@@ -120,16 +127,23 @@ public class LunchOrderService {
 
     @Transactional
     public void cancelOrder(UUID orderId, UUID childId) {
+        logger.info("Processing cancellation request for orderId: {}, childId: {}", orderId, childId);
         LunchOrder order = repository.findById(orderId)
-                .orElseThrow(() -> new DomainException("Order not found"));
+                .orElseThrow(() -> {
+                    logger.warn("Order not found for orderId: {}", orderId);
+                    return new DomainException("Order not found");
+                });
 
         if (order.getChildId() == null || !order.getChildId().equals(childId)) {
+            logger.warn("Order {} does not belong to child {}", orderId, childId);
             throw new DomainException("Order does not belong to the specified child");
         }
 
         validateCancellation(order);
         order.setStatus(OrderStatus.CANCELLED);
         repository.save(order);
+        logger.info("Order cancelled successfully. orderId: {}, previousStatus: {}, newStatus: {}", 
+                orderId, OrderStatus.PAID, OrderStatus.CANCELLED);
     }
 
     private void validateCancellation(LunchOrder order) {
@@ -178,24 +192,36 @@ public class LunchOrderService {
     }
 
     public List<LunchOrder> getByParent(UUID parentId) {
+        logger.info("Retrieving all orders for parentId: {}", parentId);
         // Exclude completed orders older than 7 hours
         Instant sevenHoursAgo = Instant.now().minusSeconds(7 * 60 * 60);
-        return repository.findAllByParentIdExcludingOldCompleted(
+        List<LunchOrder> orders = repository.findAllByParentIdExcludingOldCompleted(
                 parentId, OrderStatus.COMPLETED, sevenHoursAgo);
+        logger.info("Found {} orders for parentId: {}", orders.size(), parentId);
+        return orders;
     }
 
     public List<LunchOrder> getPaidByParent(UUID parentId) {
-        return repository.findAllByParentIdAndStatus(parentId, OrderStatus.PAID);
+        logger.info("Retrieving paid orders for parentId: {}", parentId);
+        List<LunchOrder> orders = repository.findAllByParentIdAndStatus(parentId, OrderStatus.PAID);
+        logger.info("Found {} paid orders for parentId: {}", orders.size(), parentId);
+        return orders;
     }
 
     public List<LunchOrder> getCancelledByParent(UUID parentId) {
-        return repository.findAllByParentIdAndStatus(parentId, OrderStatus.CANCELLED);
+        logger.info("Retrieving cancelled orders for parentId: {}", parentId);
+        List<LunchOrder> orders = repository.findAllByParentIdAndStatus(parentId, OrderStatus.CANCELLED);
+        logger.info("Found {} cancelled orders for parentId: {}", orders.size(), parentId);
+        return orders;
     }
 
     public List<LunchOrder> getByChild(UUID childId) {
+        logger.info("Retrieving orders for childId: {}", childId);
         // Exclude completed orders older than 7 hours
         Instant sevenHoursAgo = Instant.now().minusSeconds(7 * 60 * 60);
-        return repository.findAllByChildIdExcludingOldCompleted(
+        List<LunchOrder> orders = repository.findAllByChildIdExcludingOldCompleted(
                 childId, OrderStatus.COMPLETED, sevenHoursAgo);
+        logger.info("Found {} orders for childId: {}", orders.size(), childId);
+        return orders;
     }
 }
