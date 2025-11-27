@@ -13,26 +13,13 @@ import java.util.UUID;
 
 @Repository
 public interface LunchOrderRepository extends JpaRepository<LunchOrder, UUID> {
-    List<LunchOrder> findAllByParentIdAndStatus(UUID parentId, OrderStatus status);
-    boolean existsByChildIdAndDayOfWeekAndStatusNot(UUID childId, String dayOfWeek, OrderStatus status);
-    
-    /**
-     * Find all orders by parent ID, excluding completed orders older than 7 hours
-     */
-    @Query("SELECT o FROM LunchOrder o WHERE o.parentId = :parentId AND " +
-           "(o.status != :completedStatus OR o.completedOn IS NULL OR o.completedOn > :sevenHoursAgo)")
-    List<LunchOrder> findAllByParentIdExcludingOldCompleted(
-            @Param("parentId") UUID parentId,
-            @Param("completedStatus") OrderStatus completedStatus,
-            @Param("sevenHoursAgo") Instant sevenHoursAgo);
-    
-    /**
-     * Find all orders by child ID, excluding completed orders older than 7 hours
-     */
+
     @Query("SELECT o FROM LunchOrder o WHERE o.childId = :childId AND " +
-           "(o.status != :completedStatus OR o.completedOn IS NULL OR o.completedOn > :sevenHoursAgo)")
+           "o.status != :cancelledStatus AND " +
+           "(o.status != :completedStatus OR (o.status = :completedStatus AND o.completedOn IS NOT NULL AND o.completedOn > :sevenHoursAgo))")
     List<LunchOrder> findAllByChildIdExcludingOldCompleted(
             @Param("childId") UUID childId,
             @Param("completedStatus") OrderStatus completedStatus,
+            @Param("cancelledStatus") OrderStatus cancelledStatus,
             @Param("sevenHoursAgo") Instant sevenHoursAgo);
 }
