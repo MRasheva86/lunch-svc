@@ -21,7 +21,6 @@ import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -34,8 +33,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-@DisplayName("LunchOrderService Unit Tests")
-class LunchOrderServiceUTest {
+class LunchOrderServiceTest {
 
     @Mock
     private LunchOrderRepository repository;
@@ -55,7 +53,7 @@ class LunchOrderServiceUTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        // Inject EntityManager using reflection since it's field-injected
+
         Field entityManagerField = LunchOrderService.class.getDeclaredField("entityManager");
         entityManagerField.setAccessible(true);
         entityManagerField.set(lunchOrderService, entityManager);
@@ -89,63 +87,122 @@ class LunchOrderServiceUTest {
     }
 
     @Test
-    @DisplayName("Should create and pay order successfully")
-    void createAndPayOrder_Success() {
-        // Given
+    void checkIfMethodCreateAndPayOrderReturnsSavedOrder() {
+
         DayOfWeek tomorrowDay = LocalDate.now().getDayOfWeek().plus(1);
+
         validRequest.setDayOfWeek(tomorrowDay);
+
         LunchOrder savedOrder = LunchOrder.builder()
                 .id(orderId)
-                .parentId(parentId)
-                .walletId(walletId)
-                .childId(childId)
-                .meal(validRequest.getMeal())
-                .quantity(validRequest.getQuantity())
-                .dayOfWeek(validRequest.getDayOfWeek().name())
-                .unitPrice(new BigDecimal("2.50"))
-                .total(new BigDecimal("5.00"))
                 .status(OrderStatus.PAID)
                 .build();
 
         when(repository.save(any(LunchOrder.class))).thenReturn(savedOrder);
 
-        // When
         LunchOrder result = lunchOrderService.createAndPayOrder(validRequest);
 
-        // Then
         assertThat(result).isNotNull();
         assertThat(result.getId()).isEqualTo(orderId);
-        assertThat(result.getStatus()).isEqualTo(OrderStatus.PAID);
-        assertThat(result.getTotal()).isEqualByComparingTo(new BigDecimal("5.00"));
-        assertThat(result.getQuantity()).isEqualTo(2);
+    }
+
+    @Test
+    void checkIfMethodCreateAndPayOrderSetsOrderStatusToPaid() {
+
+        DayOfWeek tomorrowDay = LocalDate.now().getDayOfWeek().plus(1);
+
+        validRequest.setDayOfWeek(tomorrowDay);
+
+        LunchOrder savedOrder = LunchOrder.builder()
+                .id(orderId)
+                .status(OrderStatus.PAID)
+                .build();
+
+        when(repository.save(any(LunchOrder.class))).thenReturn(savedOrder);
+
+        lunchOrderService.createAndPayOrder(validRequest);
 
         ArgumentCaptor<LunchOrder> orderCaptor = ArgumentCaptor.forClass(LunchOrder.class);
-        verify(repository, times(1)).save(orderCaptor.capture());
+
+        verify(repository).save(orderCaptor.capture());
+        assertThat(orderCaptor.getValue().getStatus()).isEqualTo(OrderStatus.PAID);
+    }
+
+    @Test
+    void checkIfMethodCreateAndPayOrderCalculatesTotalAmountOfOrderCorrectly() {
+
+        DayOfWeek tomorrowDay = LocalDate.now().getDayOfWeek().plus(1);
+
+        validRequest.setDayOfWeek(tomorrowDay);
+        validRequest.setQuantity(2);
+
+        LunchOrder savedOrder = LunchOrder.builder()
+                .id(orderId)
+                .total(new BigDecimal("5.00"))
+                .build();
+
+        when(repository.save(any(LunchOrder.class))).thenReturn(savedOrder);
+
+        lunchOrderService.createAndPayOrder(validRequest);
+
+        ArgumentCaptor<LunchOrder> orderCaptor = ArgumentCaptor.forClass(LunchOrder.class);
+
+        verify(repository).save(orderCaptor.capture());
+        assertThat(orderCaptor.getValue().getTotal()).isEqualByComparingTo(new BigDecimal("5.00"));
+        assertThat(orderCaptor.getValue().getUnitPrice()).isEqualByComparingTo(new BigDecimal("2.50"));
+    }
+
+    @Test
+    void checkIfMethodCreateAndPayOrderSetsAllRequiredFieldsCorrect() {
+
+        DayOfWeek tomorrowDay = LocalDate.now().getDayOfWeek().plus(1);
+
+        validRequest.setDayOfWeek(tomorrowDay);
+
+        LunchOrder savedOrder = LunchOrder.builder().id(orderId).build();
+
+        when(repository.save(any(LunchOrder.class))).thenReturn(savedOrder);
+
+        lunchOrderService.createAndPayOrder(validRequest);
+
+        ArgumentCaptor<LunchOrder> orderCaptor = ArgumentCaptor.forClass(LunchOrder.class);
+
+        verify(repository).save(orderCaptor.capture());
+
         LunchOrder capturedOrder = orderCaptor.getValue();
+        
         assertThat(capturedOrder.getParentId()).isEqualTo(parentId);
         assertThat(capturedOrder.getChildId()).isEqualTo(childId);
         assertThat(capturedOrder.getMeal()).isEqualTo(validRequest.getMeal());
         assertThat(capturedOrder.getQuantity()).isEqualTo(validRequest.getQuantity());
-        assertThat(capturedOrder.getStatus()).isEqualTo(OrderStatus.PAID);
-        assertThat(capturedOrder.getUnitPrice()).isEqualByComparingTo(new BigDecimal("2.50"));
+        assertThat(capturedOrder.getDayOfWeek()).isEqualTo(validRequest.getDayOfWeek().name());
     }
 
     @Test
-    @DisplayName("Should throw exception when ordering for today after 10:00 AM")
-    void createAndPayOrder_OrderingForTodayAfter10AM_ThrowsException() {
-        // Given
+    void checkIfMethodCreateAndPayOrderSavesOrderToRepository() {
+
+        DayOfWeek tomorrowDay = LocalDate.now().getDayOfWeek().plus(1);
+
+        validRequest.setDayOfWeek(tomorrowDay);
+
+        LunchOrder savedOrder = LunchOrder.builder().id(orderId).build();
+
+        when(repository.save(any(LunchOrder.class))).thenReturn(savedOrder);
+
+        lunchOrderService.createAndPayOrder(validRequest);
+
+        verify(repository, times(1)).save(any(LunchOrder.class));
+    }
+
+    @Test
+    void ifTryingToCreateAndPayOrderForTodayAfter10AM_ThrowsException() {
+
         DayOfWeek today = LocalDate.now().getDayOfWeek();
+
         validRequest.setDayOfWeek(today);
 
-        // This test assumes it's after 10:00 AM (we can't easily mock time)
-        // For a real test, you might want to use a time provider or test at different times
-        // For now, we'll test the logic when it's actually after 10 AM
-        
-        // When/Then - This test may pass or fail depending on when it runs
-        // In a real scenario, you'd use a Clock or TimeProvider to control time
         try {
             lunchOrderService.createAndPayOrder(validRequest);
-            // If it doesn't throw, the current time is before 10 AM, which is fine
         } catch (DomainException e) {
             assertThat(e.getMessage()).contains("Orders for today must be placed before 10:00 AM");
         }
