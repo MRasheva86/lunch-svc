@@ -349,6 +349,136 @@ class LunchOrderServiceTest {
     }
 
     @Test
+    @DisplayName("Should set completedOn timestamp when updating order to completed")
+    void updateOrderToCompleted_SetsCompletedOnTimestamp() {
+        // Given
+        sampleOrder.setStatus(OrderStatus.PAID);
+        sampleOrder.setCompletedOn(null); // Ensure it's null before update
+        when(repository.findById(orderId)).thenReturn(Optional.of(sampleOrder));
+        when(repository.save(any(LunchOrder.class))).thenReturn(sampleOrder);
+
+        Instant beforeUpdate = Instant.now();
+
+        // When
+        lunchOrderService.updateOrderToCompleted(orderId);
+
+        // Then
+        Instant afterUpdate = Instant.now();
+        assertThat(sampleOrder.getCompletedOn()).isNotNull();
+        assertThat(sampleOrder.getCompletedOn()).isAfterOrEqualTo(beforeUpdate);
+        assertThat(sampleOrder.getCompletedOn()).isBeforeOrEqualTo(afterUpdate);
+    }
+
+    @Test
+    @DisplayName("Should update status to COMPLETED when order is in PAID status")
+    void updateOrderToCompleted_UpdatesPaidOrderToCompleted() {
+        // Given
+        sampleOrder.setStatus(OrderStatus.PAID);
+        when(repository.findById(orderId)).thenReturn(Optional.of(sampleOrder));
+        when(repository.save(any(LunchOrder.class))).thenReturn(sampleOrder);
+
+        // When
+        lunchOrderService.updateOrderToCompleted(orderId);
+
+        // Then
+        ArgumentCaptor<LunchOrder> orderCaptor = ArgumentCaptor.forClass(LunchOrder.class);
+        verify(repository).save(orderCaptor.capture());
+        LunchOrder savedOrder = orderCaptor.getValue();
+        assertThat(savedOrder.getStatus()).isEqualTo(OrderStatus.COMPLETED);
+    }
+
+    @Test
+    @DisplayName("Should update already completed order and set new completedOn timestamp")
+    void updateOrderToCompleted_UpdatesAlreadyCompletedOrder() {
+        // Given
+        Instant oldCompletedOn = Instant.now().minusSeconds(3600); // 1 hour ago
+        sampleOrder.setStatus(OrderStatus.COMPLETED);
+        sampleOrder.setCompletedOn(oldCompletedOn);
+        when(repository.findById(orderId)).thenReturn(Optional.of(sampleOrder));
+        when(repository.save(any(LunchOrder.class))).thenReturn(sampleOrder);
+
+        // When
+        lunchOrderService.updateOrderToCompleted(orderId);
+
+        // Then
+        assertThat(sampleOrder.getStatus()).isEqualTo(OrderStatus.COMPLETED);
+        assertThat(sampleOrder.getCompletedOn()).isNotNull();
+        assertThat(sampleOrder.getCompletedOn()).isAfter(oldCompletedOn);
+    }
+
+    @Test
+    @DisplayName("Should handle exception gracefully when repository.save throws exception")
+    void updateOrderToCompleted_SaveThrowsException_HandlesGracefully() {
+        // Given
+        sampleOrder.setStatus(OrderStatus.PAID);
+        when(repository.findById(orderId)).thenReturn(Optional.of(sampleOrder));
+        when(repository.save(any(LunchOrder.class))).thenThrow(new RuntimeException("Database error"));
+
+        // When - Should not throw exception, just log error
+        lunchOrderService.updateOrderToCompleted(orderId);
+
+        // Then
+        verify(repository, times(1)).findById(orderId);
+        verify(repository, times(1)).save(any(LunchOrder.class));
+        // Status should be changed locally even if save fails
+        assertThat(sampleOrder.getStatus()).isEqualTo(OrderStatus.COMPLETED);
+    }
+
+    @Test
+    @DisplayName("Should save order with all required fields updated")
+    void updateOrderToCompleted_SavesOrderWithAllFields() {
+        // Given
+        sampleOrder.setStatus(OrderStatus.PAID);
+        sampleOrder.setCompletedOn(null);
+        when(repository.findById(orderId)).thenReturn(Optional.of(sampleOrder));
+        when(repository.save(any(LunchOrder.class))).thenReturn(sampleOrder);
+
+        // When
+        lunchOrderService.updateOrderToCompleted(orderId);
+
+        // Then
+        ArgumentCaptor<LunchOrder> orderCaptor = ArgumentCaptor.forClass(LunchOrder.class);
+        verify(repository).save(orderCaptor.capture());
+        LunchOrder savedOrder = orderCaptor.getValue();
+        
+        assertThat(savedOrder.getId()).isEqualTo(orderId);
+        assertThat(savedOrder.getStatus()).isEqualTo(OrderStatus.COMPLETED);
+        assertThat(savedOrder.getCompletedOn()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("Should call repository methods in correct order")
+    void updateOrderToCompleted_CallsRepositoryMethodsInCorrectOrder() {
+        // Given
+        sampleOrder.setStatus(OrderStatus.PAID);
+        when(repository.findById(orderId)).thenReturn(Optional.of(sampleOrder));
+        when(repository.save(any(LunchOrder.class))).thenReturn(sampleOrder);
+
+        // When
+        lunchOrderService.updateOrderToCompleted(orderId);
+
+        // Then
+        var inOrder = inOrder(repository);
+        inOrder.verify(repository).findById(orderId);
+        inOrder.verify(repository).save(any(LunchOrder.class));
+    }
+
+    @Test
+    @DisplayName("Should handle null orderId gracefully")
+    void updateOrderToCompleted_NullOrderId_HandlesGracefully() {
+        // Given
+        UUID nullOrderId = null;
+        when(repository.findById(nullOrderId)).thenReturn(Optional.empty());
+
+        // When - Should not throw exception, just log error
+        lunchOrderService.updateOrderToCompleted(nullOrderId);
+
+        // Then
+        verify(repository, times(1)).findById(nullOrderId);
+        verify(repository, never()).save(any(LunchOrder.class));
+    }
+
+    @Test
     @DisplayName("Should get orders by child excluding cancelled and old completed")
     void getByChild_Success() {
         // Given
