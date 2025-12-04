@@ -22,19 +22,9 @@ JUnit + MockMvc + Integration tests
 📦 Domain Model
 All entities use UUID as primary key.
 1. Lunch
-id
-date
-meals (relation)
-status
 2. Meal
-id
-name
-description
-price
 3. OrderStatus
-id
-enum: PAID / CANCELLED / COMPLETED 
-
+   
 📡 REST API Endpoints
 POST /api/lunch
 Create new lunch order.
